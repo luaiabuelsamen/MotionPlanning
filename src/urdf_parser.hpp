@@ -3,6 +3,7 @@
 #include "transform.hpp"
 #include <string>
 #include <vector>
+#include <iostream>
 #include <tinyxml2.h>  // You'll need to install this: apt install libtinyxml2-dev
 
 struct Joint {
@@ -22,11 +23,16 @@ public:
         tinyxml2::XMLDocument doc;
         
         if (doc.LoadFile(urdf_file.c_str()) != tinyxml2::XML_SUCCESS) {
+            std::cerr << "ERROR: Failed to load URDF file: " << urdf_file << std::endl;
+            std::cerr << "Error: " << doc.ErrorStr() << std::endl;
             return joints;
         }
         
         auto* robot = doc.FirstChildElement("robot");
-        if (!robot) return joints;
+        if (!robot) {
+            std::cerr << "ERROR: No <robot> element found in URDF" << std::endl;
+            return joints;
+        }
         
         for (auto* joint_elem = robot->FirstChildElement("joint");
              joint_elem != nullptr;

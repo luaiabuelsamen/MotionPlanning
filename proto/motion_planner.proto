@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package motionplanner;
+
+// Cartesian pose message
+message Pose {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+  double qx = 4;
+  double qy = 5;
+  double qz = 6;
+  double qw = 7;
+}
+
+// Joint values message
+message JointValues {
+  repeated double values = 1;
+}
+
+// Initialize robot request
+message InitRobotRequest {
+  string robot_type = 1; // e.g., "ur5e", "franka", "kinova"
+}
+
+// Initialize robot response
+message InitRobotResponse {
+  bool success = 1;
+  string message = 2;
+  int32 dof = 3; // Number of degrees of freedom
+}
+
+// MoveL (linear move) request
+message MoveLRequest {
+  Pose target_pose = 1;
+  JointValues start_joints = 2;
+  bool fast_mode = 3; // Use fast IK+smoothing vs accurate Jacobian mode
+}
+
+// MoveJ (joint move) request
+message MoveJRequest {
+  JointValues target_joints = 1;
+  JointValues start_joints = 2;
+}
+
+// Trajectory response
+message TrajectoryResponse {
+  bool success = 1;
+  string message = 2;
+  repeated JointValues trajectory = 3;
+  double duration = 4; // Total trajectory duration in seconds
+  int32 num_waypoints = 5;
+}
+
+// Forward Kinematics request
+message FKRequest {
+  JointValues joint_values = 1;
+}
+
+// Forward Kinematics response
+message FKResponse {
+  bool success = 1;
+  string message = 2;
+  Pose end_effector_pose = 3;
+}
+
+// Inverse Kinematics request
+message IKRequest {
+  Pose target_pose = 1;
+  JointValues seed = 2;
+  double tolerance = 3; // Position tolerance in meters
+  int32 max_iterations = 4;
+}
+
+// Inverse Kinematics response
+message IKResponse {
+  bool success = 1;
+  string message = 2;
+  JointValues joint_solution = 3;
+}
+
+service MotionPlanner {
+  // Initialize robot with specific type (must be called first)
+  rpc InitRobot (InitRobotRequest) returns (InitRobotResponse);
+  
+  // Motion planning
+  rpc MoveL (MoveLRequest) returns (TrajectoryResponse);
+  rpc MoveJ (MoveJRequest) returns (TrajectoryResponse);
+  
+  // Kinematics services
+  rpc ComputeFK (FKRequest) returns (FKResponse);
+  rpc ComputeIK (IKRequest) returns (IKResponse);
+}

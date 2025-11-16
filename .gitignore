@@ -2,6 +2,17 @@
 build/
 cmake-build-*/
 
+# Python virtual environment
+venv/
+
+# Generated Python protobuf files
+proto/*_pb2.py
+proto/*_pb2_grpc.py
+
+# Plot outputs
+plots/
+Testing/
+
 # Compiled Object files
 *.slo
 *.lo
