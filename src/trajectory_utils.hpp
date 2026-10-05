@@ -7,28 +7,27 @@
 namespace TrajectoryUtils {
 
 /**
- * Linear interpolation between two trajectories
+ * Time step that keeps a trajectory's duration when it is resampled to
+ * new_num_points points
+ */
+inline double resampledDt(const Trajectory& traj, size_t new_num_points) {
+    if (new_num_points < 2) return traj.dt;
+    return traj.dt * static_cast<double>(traj.size() - 1) / (new_num_points - 1);
+}
+
+/**
+ * Resample a trajectory to new_num_points points by linear interpolation of
+ * positions, keeping its duration
  */
 inline Trajectory linearInterpolate(const Trajectory& traj, size_t new_num_points) {
-    if (new_num_points <= traj.size()) {
-        // Simple decimation if fewer points needed
-        Trajectory result(new_num_points, traj.dof, traj.dt);
-        double stride = static_cast<double>(traj.size() - 1) / (new_num_points - 1);
-        
-        for (size_t i = 0; i < new_num_points; ++i) {
-            size_t idx = static_cast<size_t>(i * stride);
-            result.points[i] = traj.points[idx];
-        }
-        return result;
-    }
-    
-    // Upsample trajectory
-    Trajectory result(new_num_points, traj.dof, traj.dt);
+    Trajectory result(new_num_points, traj.dof, resampledDt(traj, new_num_points));
+    result.success = traj.success;
     
     for (size_t i = 0; i < new_num_points; ++i) {
         // Find position in original trajectory
-        double pos = static_cast<double>(i) * (traj.size() - 1) / (new_num_points - 1);
-        size_t idx0 = static_cast<size_t>(std::floor(pos));
+        double pos = new_num_points < 2 ? 0.0 :
+            static_cast<double>(i) * (traj.size() - 1) / (new_num_points - 1);
+        size_t idx0 = std::min(static_cast<size_t>(std::floor(pos)), traj.size() - 1);
         size_t idx1 = std::min(idx0 + 1, traj.size() - 1);
         double alpha = pos - idx0;
         
@@ -47,7 +46,9 @@ inline Trajectory linearInterpolate(const Trajectory& traj, size_t new_num_point
  * Cubic spline interpolation for smoother trajectories
  */
 inline Trajectory cubicSplineInterpolate(const Trajectory& traj, size_t new_num_points) {
-    Trajectory result(new_num_points, traj.dof, traj.dt);
+    if (traj.size() < 3) return linearInterpolate(traj, new_num_points);
+    Trajectory result(new_num_points, traj.dof, resampledDt(traj, new_num_points));
+    result.success = traj.success;
     
     // For each DOF, perform cubic interpolation
     for (size_t j = 0; j < traj.dof; ++j) {
@@ -77,9 +78,11 @@ inline Trajectory cubicSplineInterpolate(const Trajectory& traj, size_t new_num_
         
         // Interpolate at new points
         for (size_t i = 0; i < new_num_points; ++i) {
-            double pos = static_cast<double>(i) * (traj.size() - 1) / (new_num_points - 1);
-            size_t idx0 = static_cast<size_t>(std::floor(pos));
-            size_t idx1 = std::min(idx0 + 1, traj.size() - 1);
+            double pos = new_num_points < 2 ? 0.0 :
+                static_cast<double>(i) * (traj.size() - 1) / (new_num_points - 1);
+            // Interval [idx0, idx0 + 1], also for the last point
+            size_t idx0 = std::min(static_cast<size_t>(std::floor(pos)), traj.size() - 2);
+            size_t idx1 = idx0 + 1;
             
             double h = traj.dt;
             double a = idx1 - pos;

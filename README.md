@@ -4,10 +4,13 @@ A C++ project for motion planning with forward/inverse kinematics and trajectory
 
 ## Dependencies
 
-This project requires the following libraries (install via Homebrew on macOS):
+The planner itself is header-only and needs Eigen and tinyxml2; the gRPC
+server additionally needs Protobuf and gRPC (it is skipped if they are not
+found).
 
 ```bash
-brew install pkg-config protobuf grpc tinyxml2 eigen
+brew install pkg-config protobuf grpc tinyxml2 eigen         # macOS
+sudo apt install pkg-config libtinyxml2-dev libeigen3-dev    # Linux (planner and tests)
 ```
 
 ## Building
@@ -49,10 +52,16 @@ make test
 ## API
 
 The motion planner provides:
-- Forward kinematics (FK)
-- Inverse kinematics (IK)
+- Forward kinematics (FK) along the URDF tree from the root to the tip link
+  (by default the leaf with the most movable joints, e.g. `tool0`);
+  revolute, continuous and prismatic joints
+- Inverse kinematics (IK): damped least squares with step limiting and joint
+  limits; `computeIK(..., &converged)` reports whether it reached the target
 - Joint-space trajectory optimization (MoveJ)
 - Cartesian-space trajectory optimization (MoveL)
+
+`Trajectory::success` is false when a plan cannot be trusted (goal outside
+the joint limits, IK failure along a MoveL line).
 - gRPC server interface for remote control
 
 ## Project Structure

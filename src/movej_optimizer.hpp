@@ -153,8 +153,11 @@ public:
             }
         }
         
-        computeDerivatives(traj);
+        // A start or goal outside the limits cannot be reached: the clamped
+        // trajectory is returned, marked as failed.
+        traj.success = withinJointLimits(start_config) && withinJointLimits(goal_config);
         applyJointLimits(traj);
+        computeDerivatives(traj);
         
         return traj;
     }
