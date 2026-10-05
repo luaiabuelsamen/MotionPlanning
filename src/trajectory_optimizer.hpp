@@ -3,6 +3,8 @@
 #include "fk_solver.hpp"
 #include "jacobian.hpp"
 #include <Eigen/Dense>
+#include <algorithm>
+#include <limits>
 #include <vector>
 
 /**
@@ -27,9 +29,12 @@ struct Trajectory {
     std::vector<TrajectoryPoint> points;
     double dt;  // Time step between points
     size_t dof;
+    // False if the planner could not produce a valid trajectory (e.g. MoveL
+    // waypoints whose IK did not converge); the points are then best effort.
+    bool success = true;
     
     Trajectory(size_t num_points, size_t degrees_of_freedom, double timestep = 0.01)
-        : dof(degrees_of_freedom), dt(timestep) {
+        : dt(timestep), dof(degrees_of_freedom) {
         points.reserve(num_points);
         for (size_t i = 0; i < num_points; ++i) {
             points.emplace_back(dof);
@@ -95,7 +100,7 @@ protected:
 public:
     TrajectoryOptimizer(FKSolver& fk, size_t degrees_of_freedom, 
                        const OptimizerConfig& cfg = OptimizerConfig())
-        : fk_solver(fk), dof(degrees_of_freedom), config(cfg) {}
+        : fk_solver(fk), config(cfg), dof(degrees_of_freedom) {}
     
     virtual ~TrajectoryOptimizer() = default;
     
@@ -188,6 +193,23 @@ public:
                                                config.joint_upper_limits[j]);
             }
         }
+    }
+    
+    /**
+     * Whether a configuration is within the joint limits (if any are set)
+     */
+    bool withinJointLimits(const std::vector<double>& q, double tolerance = 1e-9) const {
+        if (config.joint_lower_limits.size() != dof || 
+            config.joint_upper_limits.size() != dof) {
+            return true;
+        }
+        for (size_t j = 0; j < dof; ++j) {
+            if (q[j] < config.joint_lower_limits[j] - tolerance ||
+                q[j] > config.joint_upper_limits[j] + tolerance) {
+                return false;
+            }
+        }
+        return true;
     }
     
     /**

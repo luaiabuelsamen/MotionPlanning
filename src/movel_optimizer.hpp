@@ -56,24 +56,43 @@ public:
     
     /**
      * Generate seed trajectory using IK for each Cartesian waypoint
-     * This is the main bottleneck - IK called for every waypoint
+     * This is the main bottleneck - IK called for every waypoint.
+     * Each waypoint is warm-started from the previous one; if IK does not
+     * converge, the segment is split into smaller steps (up to
+     * max_subdivisions halvings) before giving up. The trajectory's success
+     * flag is cleared if any waypoint fails.
      */
     Trajectory generateIKSeed(const std::vector<double>& start_config,
-                             const std::vector<std::pair<Vector3, Quaternion>>& cartesian_path) {
+                             const std::vector<std::pair<Vector3, Quaternion>>& cartesian_path,
+                             int max_subdivisions = 4) {
         size_t num_waypoints = cartesian_path.size();
         Trajectory traj(num_waypoints, dof, config.dt);
         
         // Set start configuration
         traj.points[0].position = start_config;
         
-        // Solve IK for each waypoint, using previous solution as seed (warm start)
         std::vector<double> current_config = start_config;
         
         for (size_t i = 1; i < num_waypoints; ++i) {
+            const auto& [prev_pos, prev_quat] = cartesian_path[i - 1];
             const auto& [pos, quat] = cartesian_path[i];
             
-            // Fast IK with reduced iterations (cuRobo uses similar approach)
-            current_config = ik_solver.computeIK(pos, quat, current_config);
+            bool ok = false;
+            for (int level = 0; level <= max_subdivisions && !ok; ++level) {
+                int pieces = 1 << level;
+                std::vector<double> q = current_config;
+                ok = true;
+                for (int k = 1; k <= pieces && ok; ++k) {
+                    double alpha = static_cast<double>(k) / pieces;
+                    q = ik_solver.computeIK((1.0 - alpha) * prev_pos + alpha * pos,
+                                            prev_quat.slerp(alpha, quat), q, &ok);
+                }
+                if (ok) current_config = q;
+            }
+            if (!ok) {
+                traj.success = false;
+                current_config = ik_solver.computeIK(pos, quat, current_config);  // best effort
+            }
             
             traj.points[i].position = current_config;
         }
@@ -105,8 +124,8 @@ public:
             }
         }
         
-        computeDerivatives(smoothed);
         applyJointLimits(smoothed);
+        computeDerivatives(smoothed);
         return smoothed;
     }
     
@@ -130,9 +149,7 @@ public:
             error += pos_error.squaredNorm();
             
             // Orientation error
-            Quaternion q_error = target_quat * current_quat.conjugate();
-            Eigen::Vector3d orient_error(q_error.x(), q_error.y(), q_error.z());
-            error += 10.0 * orient_error.squaredNorm();
+            error += 10.0 * orientationError(target_quat, current_quat).squaredNorm();
         }
         
         return config.goal_weight * error;
@@ -179,10 +196,7 @@ public:
                 Vector3 pos_error = target_pos - current_pos;
                 
                 // Orientation error
-                Quaternion q_error = target_quat * current_quat.conjugate();
-                Eigen::Vector3d orient_error;
-                orient_error << q_error.x(), q_error.y(), q_error.z();
-                orient_error *= 2.0;
+                Eigen::Vector3d orient_error = orientationError(target_quat, current_quat);
                 
                 // Combine into 6D error vector
                 Eigen::VectorXd error(6);
@@ -196,7 +210,7 @@ public:
                 double damping = 0.01;
                 Eigen::MatrixXd JJt = J * J.transpose();
                 Eigen::MatrixXd damped = JJt + damping * damping * Eigen::MatrixXd::Identity(6, 6);
-                Eigen::VectorXd delta_q = J.transpose() * damped.inverse() * error;
+                Eigen::VectorXd delta_q = J.transpose() * damped.ldlt().solve(error);
                 
                 // Update joint configuration
                 for (size_t j = 0; j < dof; ++j) {

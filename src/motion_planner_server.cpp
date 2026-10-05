@@ -203,9 +203,10 @@ private:
                     try {
                         auto result = robot_->moveL(start_joints_vec, position, orientation, 50);
                         
-                        response_.set_success(true);
-                        response_.set_message("MoveL trajectory generated");
-                        response_.set_duration(result.points.size() * result.dt);
+                        response_.set_success(result.success);
+                        response_.set_message(result.success ? "MoveL trajectory generated"
+                                                             : "MoveL failed (unreachable goal, joint limits or IK did not converge); trajectory is best effort");
+                        response_.set_duration((result.points.size() - 1) * result.dt);
                         response_.set_num_waypoints(result.points.size());
                         
                         auto traj_matrix = result.getPositionMatrix();
@@ -215,8 +216,8 @@ private:
                                 waypoint->add_values(traj_matrix(i, j));
                             }
                         }
-                        std::cout << "[MoveL] Success: " << result.points.size() 
-                                  << " waypoints, duration: " << result.points.size() * result.dt << "s" << std::endl;
+                        std::cout << (result.success ? "[MoveL] Success: " : "[MoveL] Failed: ") << result.points.size() 
+                                  << " waypoints, duration: " << (result.points.size() - 1) * result.dt << "s" << std::endl;
                     } catch (const std::exception& e) {
                         response_.set_success(false);
                         response_.set_message("Exception in MoveL: " + std::string(e.what()));
@@ -295,9 +296,10 @@ private:
                     try {
                         auto result = robot_->moveJ(start_joints_vec, target_joints_vec, 50);
                         
-                        response_.set_success(true);
-                        response_.set_message("MoveJ trajectory generated");
-                        response_.set_duration(result.points.size() * result.dt);
+                        response_.set_success(result.success);
+                        response_.set_message(result.success ? "MoveJ trajectory generated"
+                                                             : "MoveJ failed (unreachable goal, joint limits or IK did not converge); trajectory is best effort");
+                        response_.set_duration((result.points.size() - 1) * result.dt);
                         response_.set_num_waypoints(result.points.size());
                         
                         auto traj_matrix = result.getPositionMatrix();
@@ -307,8 +309,8 @@ private:
                                 waypoint->add_values(traj_matrix(i, j));
                             }
                         }
-                        std::cout << "[MoveJ] Success: " << result.points.size() 
-                                  << " waypoints, duration: " << result.points.size() * result.dt << "s" << std::endl;
+                        std::cout << (result.success ? "[MoveJ] Success: " : "[MoveJ] Failed: ") << result.points.size() 
+                                  << " waypoints, duration: " << (result.points.size() - 1) * result.dt << "s" << std::endl;
                     } catch (const std::exception& e) {
                         response_.set_success(false);
                         response_.set_message("Exception in MoveJ: " + std::string(e.what()));
@@ -462,16 +464,18 @@ private:
                     std::vector<double> seed_vec(seed.data(), seed.data() + seed.size());
                     
                     try {
-                        auto solution = robot_->computeIK(position, orientation, seed_vec);
+                        bool converged = false;
+                        auto solution = robot_->computeIK(position, orientation, seed_vec, &converged);
                         
-                        response_.set_success(true);
-                        response_.set_message("IK solution found");
+                        response_.set_success(converged);
+                        response_.set_message(converged ? "IK solution found"
+                                                        : "IK did not converge; joint_solution is the last iterate");
                         
                         auto* joint_solution = response_.mutable_joint_solution();
                         for (double val : solution) {
                             joint_solution->add_values(val);
                         }
-                        std::cout << "[IK] Success: Found solution" << std::endl;
+                        std::cout << (converged ? "[IK] Success: Found solution" : "[IK] Failed: did not converge") << std::endl;
                     } catch (const std::exception& e) {
                         response_.set_success(false);
                         response_.set_message("Exception in IK: " + std::string(e.what()));
